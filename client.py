@@ -26,7 +26,8 @@ def receive_messages(client_socket):
                 client_socket.close() 
                 sys.exit(0) 
         except:
-            break
+            print("Utracono połączenie z serwerem.")
+            sys.exit(0)
 
 def client():
     global client_socket 

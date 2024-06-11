@@ -2,14 +2,7 @@ import socket
 import threading
 import signal
 import sys
-
-# TODO - trzeba dodac obsługe sygnałów na wyjscie z programu (poprawić to co jest)
-# TODO - obsługę dołączenia większej liczby użytkowników niż 2
-# TODO - jakies procesy się otwoerają i nie konczą??
-# TODO - programy mają się zamknąć jak ktoś wygra 
-''' TODO - Serwer powinien działać w trybie „demona” z logowaniem do plików systemowych. 
-W programach, tam gdzie to jest wskazane należy użyć funkcji do przekształcania nazw na adresy (API do DNS).'''
-
+ 
 SERVER_HOST = '127.0.0.1'
 SERVER_PORT = 3500
 MAX_CLIENTS = 2
@@ -32,6 +25,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)  # Ustawienie obsługi sygnału
+signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - jak zamkniemy terminal to działa
 
 def validate_ships_position(board, ship_length, start, end):
     start_row, start_col = start
@@ -124,7 +118,10 @@ def handle_client(client_socket, addr, client_id):
             while True:
                 if ship_length == 1:
                     client_socket.send(f"[INFO] Umieść {ship_name} statek na planszy.\n       Podaj jego pozycję (np. H4):".encode())
-                    position = client_socket.recv(1024).decode().strip()
+                    try:
+                        position = client_socket.recv(1024).decode().strip()
+                    except:
+                        continue
                     start = parse_position(position)
                     if start is None:
                         client_socket.send("[ERROR] Można używać tylko formatu {A-J}{1-10}.\n".encode())
@@ -132,7 +129,10 @@ def handle_client(client_socket, addr, client_id):
                     end = start
                 else:
                     client_socket.send(f"[INFO] Umieść {ship_name} statek na planszy:\n       Podaj jego początek i koniec (np. B2 B6): ".encode())
-                    positions = client_socket.recv(1024).decode().strip().split()
+                    try:
+                        positions = client_socket.recv(1024).decode().strip().split()
+                    except:
+                        continue
                     if len(positions) != 2:
                         client_socket.send("[ERROR] Nieprawidłowy format. Spróbuj ponownie.\n".encode())
                         continue
@@ -176,7 +176,11 @@ def handle_client(client_socket, addr, client_id):
 
             client_socket.send("TWÓJ RUCH! Podaj pozycję do strzału (np. A1):\n".encode())
             client_socket.send(display_board(opponent_board_display, to_string=True).encode())
-            position = client_socket.recv(1024).decode().strip()
+            try: 
+                position = client_socket.recv(1024).decode().strip()
+            except:
+                print("Klient zakończył grę.")
+                continue
             target = parse_position(position)
             if target is None:
                 client_socket.send("[ERROR] Można używać tylko A-J oraz 1-10.\n".encode())
@@ -234,6 +238,8 @@ def handle_client(client_socket, addr, client_id):
 
 def server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1) # mozna osobno na innych adresach na tym samym porcie
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT,1) # mozna się bindowac jak TIME/CLOSE_WAIT
         server_socket.bind((SERVER_HOST, SERVER_PORT))
         server_socket.listen()
         print(f"[INFO] Serwer nasłuchuje na {SERVER_HOST}:{SERVER_PORT}")
@@ -242,8 +248,8 @@ def server():
         while True:
             try:
                 client_socket, addr = server_socket.accept()
-                # tutaj do poprawy:
                 if len(clients) >= MAX_CLIENTS:
+                    print(f"[INFO] Próba połączenia z adresu: {addr}")
                     client_socket.send("[INFO] Serwer jest pełny. Spróbuj ponownie później.\n".encode())
                     client_socket.close()
                     continue
