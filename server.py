@@ -2,10 +2,17 @@ import socket
 import threading
 import signal
 import sys
+import logging
+from gameLogic import shutdown_server, validate_ships_position, place_ship, parse_position, display_board, is_ship_sunk
  
+logging.basicConfig(filename='server.log', level=logging.INFO)
+
 SERVER_HOST = '127.0.0.1'
-SERVER_PORT = 3500
+SERVER_PORT = 3501
 MAX_CLIENTS = 2
+
+MULTICAST_GROUP = '224.0.0.1'
+MULTICAST_PORT = 5007
 
 clients = []
 player_boards = []
@@ -27,82 +34,23 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)  # Ustawienie obsługi sygnału
 signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - jak zamkniemy terminal to działa
 
-def validate_ships_position(board, ship_length, start, end):
-    start_row, start_col = start
-    end_row, end_col = end
+def multicast_listener():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as multicast_socket:
+        multicast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        multicast_socket.bind((MULTICAST_GROUP, MULTICAST_PORT))
+        mreq = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(SERVER_HOST)
+        multicast_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
-    if start_row == end_row:  # Poziomo
-        if abs(start_col - end_col) + 1 != ship_length:
-            return f"[ERROR]: Statek ma długość {ship_length}."
-        for col in range(min(start_col, end_col), max(start_col, end_col) + 1):
-            if board[start_row][col] != '_':
-                return "[ERROR]: Pole jest już zajęte."
-    elif start_col == end_col:  # Pionowo
-        if abs(start_row - end_row) + 1 != ship_length:
-            return f"[ERROR]: Statek ma długość {ship_length}."
-        for row in range(min(start_row, end_row), max(start_row, end_row) + 1):
-            if board[row][start_col] != '_':
-                return "[ERROR]: Pole jest już zajęte."
-    else:
-        return "[ERROR]: Statek musi być umieszczony w jednej linii."
+        while True:
+            data, addr = multicast_socket.recvfrom(1024)
+            if data.decode() == 'DISCOVER_SERVER':
+                multicast_socket.sendto(f'Serwer:{SERVER_HOST}:{SERVER_PORT}'.encode(), addr)
 
-    return None
-
-def place_ship(board, start, end, ship_length, ship_name, ships):
-    start_row, start_col = start
-    end_row, end_col = end
-
-    ship_positions = []
-#   =======================================
-#   Jesli statek jest:              "O"
-#   Jesli statek jest trafiony:     "X"
-#   Jesli statku nie ma:            "_"
-#   Jesli pudło:                    "~"
-#   =======================================
-
-    if start_row == end_row:
-        for col in range(min(start_col, end_col), max(start_col, end_col) + 1):
-            board[start_row][col] = 'O'
-            ship_positions.append((start_row, col))
-    elif start_col == end_col:
-        for row in range(min(start_row, end_row), max(start_row, end_row) + 1):
-            board[row][start_col] = 'O'
-            ship_positions.append((row, start_col))
-
-    ships[ship_name] = ship_positions  # [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)] 
-
-# Pozycja -> współrzędne tablicy:
-# Np: A1 -> (0,0) bo zwraca nam 0-9 dla kolumn i dla wierszy
-# A jesli nie miesci sie w zakresie to zwraca None
-def parse_position(position):
-    try:
-        row = ord(position[0].upper()) - ord('A')  # Konwersja wiersza (zmiana z ASCII)
-        col = int(position[1:]) - 1  # Konwersja kolumny
-        if row < 0 or row > 9 or col < 0 or col > 9:  # Sprawdzenie zakresu (0,9)
-            raise ValueError
-        return row, col  # Zwrócenie współrzędnych (0,0)
-    except:
-        return None  # Niepoprawna pozycja
-
-def display_board(board, to_string=False): 
-    header = "  " + " ".join(str(i + 1) for i in range(10)) #  1 2 3 4 5 6 7 8 9
-    rows = ""
-    for i, row in enumerate(board): # enumerate to (0, 1-el z tablicy)
-        rows += chr(ord('A') + i) + " " + " ".join(row) + "\n"  # A _ _ _ _ _ _ _ _ _ _
-
-    board_string = header + "\n" + rows 
-
-    if to_string:
-        return board_string  # Zwraca jako string
-    else:
-        print(board_string)  # Drukuje planszę
-
-def is_ship_sunk(ship_positions, board):
-    return all(board[row][col] == 'X' for row, col in ship_positions)
 
 def handle_client(client_socket, addr, client_id):
     global turn
-    print(f"[INFO] Klient {addr} dołączył do gry.")
+    # print(f"[INFO] Klient {addr} dołączył do gry.")
+    logging.info(f"[INFO] Klient {addr} dołączył do gry.")
 
     try:
         client_socket.send("================START================\n\n".encode())
@@ -152,7 +100,9 @@ def handle_client(client_socket, addr, client_id):
                 # print(ships_info[client_id])           # {'5-miejscowy': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-miejscowy': [(0, 5), (0, 6), (0, 7)], '1-miejscowy': [(7, 3)]}
                 break
 
-        print(f"[INFO] {addr} ukończył ustawianie statków.")
+        # print(f"[INFO] {addr} ukończył ustawianie statków.")
+        logging.info(f"[INFO] {addr} ukończył ustawianie statków.")
+
         player_boards.append(board)
 
         if len(player_boards) < MAX_CLIENTS:
@@ -179,7 +129,8 @@ def handle_client(client_socket, addr, client_id):
             try: 
                 position = client_socket.recv(1024).decode().strip()
             except:
-                print("Klient zakończył grę.")
+                # print("Klient zakończył grę.")
+                logging.info("Klient zakończył grę.")
                 continue
             target = parse_position(position)
             if target is None:
@@ -218,7 +169,10 @@ def handle_client(client_socket, addr, client_id):
             if all(cell != 'O' for row in opponent_board for cell in row):
                 client_socket.send("==============KONIEC GRY!==============\n              Wygrałeś!".encode())
                 clients[opponent_id].send("==============KONIEC GRY!==============\n          Przeciwnik wygrał!".encode())
-                break
+                client_socket.close()
+                clients[opponent_id].close()
+                logging.info(f"[INFO] Koniec gry. {addr} wygrał.")               
+                shutdown_server()
 
             with turn_lock:
                 turn = opponent_id  
@@ -227,6 +181,7 @@ def handle_client(client_socket, addr, client_id):
 
     except Exception as e:
         print(f"[INFO] {addr} zakończył rozgrywkę. {e}")
+        logging.error(f"Error handling client {addr}: {e}")
         other_client_id = 1 - client_id
         if other_client_id < len(clients):
             try:
@@ -242,14 +197,17 @@ def server():
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT,1) # mozna się bindowac jak TIME/CLOSE_WAIT
         server_socket.bind((SERVER_HOST, SERVER_PORT))
         server_socket.listen()
-        print(f"[INFO] Serwer nasłuchuje na {SERVER_HOST}:{SERVER_PORT}")
+        logging.info(f"[INFO] Serwer uruchomiony na {SERVER_HOST}:{SERVER_PORT}.")
+        # print(f"[INFO] Serwer nasłuchuje na {SERVER_HOST}:{SERVER_PORT}")
+
+        threading.Thread(target=multicast_listener, daemon=True).start()
 
         client_id = 0
         while True:
             try:
                 client_socket, addr = server_socket.accept()
                 if len(clients) >= MAX_CLIENTS:
-                    print(f"[INFO] Próba połączenia z adresu: {addr}")
+                    logging.info(f"[INFO] Próba połączenia z adresu: {addr}")
                     client_socket.send("[INFO] Serwer jest pełny. Spróbuj ponownie później.\n".encode())
                     client_socket.close()
                     continue
