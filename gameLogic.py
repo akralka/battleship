@@ -1,12 +1,3 @@
-def shutdown_server():
-    for client_socket in clients:
-        try:
-            client_socket.send("Serwer zakończył rozgrywkę".encode())
-            client_socket.close()
-        except:
-            pass
-    sys.exit(0)
-
 def validate_ships_position(board, ship_length, start, end):
     start_row, start_col = start
     end_row, end_col = end

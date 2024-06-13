@@ -3,7 +3,7 @@ import threading
 import signal
 import sys
 import logging
-from gameLogic import shutdown_server, validate_ships_position, place_ship, parse_position, display_board, is_ship_sunk
+from gameLogic import validate_ships_position, place_ship, parse_position, display_board, is_ship_sunk
  
 logging.basicConfig(filename='server.log', level=logging.INFO)
 
@@ -30,7 +30,7 @@ def signal_handler(sig, frame):
         except:
             pass
     sys.exit(0)
-
+    
 signal.signal(signal.SIGINT, signal_handler)  # Ustawienie obsługi sygnału
 signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - jak zamkniemy terminal to działa
 
@@ -49,7 +49,6 @@ def multicast_listener():
 
 def handle_client(client_socket, addr, client_id):
     global turn
-    # print(f"[INFO] Klient {addr} dołączył do gry.")
     logging.info(f"[INFO] Klient {addr} dołączył do gry.")
 
     try:
@@ -100,7 +99,6 @@ def handle_client(client_socket, addr, client_id):
                 # print(ships_info[client_id])           # {'5-miejscowy': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-miejscowy': [(0, 5), (0, 6), (0, 7)], '1-miejscowy': [(7, 3)]}
                 break
 
-        # print(f"[INFO] {addr} ukończył ustawianie statków.")
         logging.info(f"[INFO] {addr} ukończył ustawianie statków.")
 
         player_boards.append(board)
@@ -129,7 +127,6 @@ def handle_client(client_socket, addr, client_id):
             try: 
                 position = client_socket.recv(1024).decode().strip()
             except:
-                # print("Klient zakończył grę.")
                 logging.info("Klient zakończył grę.")
                 continue
             target = parse_position(position)
@@ -156,7 +153,7 @@ def handle_client(client_socket, addr, client_id):
                             client_socket.send(response.encode())
                             clients[opponent_id].send(f"PRZECIWNIK TRAFIŁ: {position}\nZATOPIONY: {ship_name}\n".encode())
                             break
-                else: # for   else, bo jesli break ^ to else się nie wykona
+                else: # for  else, bo jesli break ^ to else się nie wykona
                     client_socket.send(response.encode())
                     clients[opponent_id].send(f"PRZECIWNIK TRAFIŁ: {position}\n".encode())
             else:
@@ -171,8 +168,8 @@ def handle_client(client_socket, addr, client_id):
                 clients[opponent_id].send("==============KONIEC GRY!==============\n          Przeciwnik wygrał!".encode())
                 client_socket.close()
                 clients[opponent_id].close()
-                logging.info(f"[INFO] Koniec gry. {addr} wygrał.")               
-                shutdown_server()
+                logging.info(f"[INFO] Koniec gry. {addr} wygrał.")       
+                break
 
             with turn_lock:
                 turn = opponent_id  
@@ -198,7 +195,6 @@ def server():
         server_socket.bind((SERVER_HOST, SERVER_PORT))
         server_socket.listen()
         logging.info(f"[INFO] Serwer uruchomiony na {SERVER_HOST}:{SERVER_PORT}.")
-        # print(f"[INFO] Serwer nasłuchuje na {SERVER_HOST}:{SERVER_PORT}")
 
         threading.Thread(target=multicast_listener, daemon=True).start()
 
