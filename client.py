@@ -15,9 +15,8 @@ logging.basicConfig(filename='client.log', level=logging.INFO)
 client_socket = None
 
 # Obsługa CTRL+C
-def signal_handler(sig, frame):
+def signal_handler(*args):
     global client_socket
-    # print("\n[INFO] Zakończyłeś rozgrywkę.") 
     logging.info("[INFO] Zakończyłeś rozgrywkę.") 
     client_socket.close()  
     sys.exit(0) 
@@ -33,13 +32,12 @@ def discover_server():
 
         while True:
             try:
-                data, addr = multicast_socket.recvfrom(1024)
+                data, _ = multicast_socket.recvfrom(1024)
                 if data.decode().startswith('Serwer'):
                     _, server_ip, server_port = data.decode().split(':')
                     return server_ip, int(server_port)
             except socket.timeout:
                 logging.error("Nie znaleziono serwera multicast. Spróbuj ponownie.")
-                # print("Nie znaleziono serwera multicast. Spróbuj ponownie.")
                 sys.exit(0)
 
 def receive_messages(client_socket):
@@ -54,7 +52,6 @@ def receive_messages(client_socket):
                 sys.exit(0) 
         except:
             logging.error("Utracono połączenie z serwerem.")
-            # print("Utracono połączenie z serwerem.")
             sys.exit(0)
 
 def client():
@@ -62,7 +59,6 @@ def client():
     server_ip, server_port = discover_server()
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
     client_socket.connect((server_ip, server_port))
-    # print(f"[INFO] Połączono z serwerem {server_ip}:{server_port}")
     logging.info(f"[INFO] Połączono z serwerem {server_ip}:{server_port}") 
     
     # Wątek do odbierania wiadomości od serwera

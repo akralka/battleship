@@ -21,7 +21,7 @@ turn = 0  # Czyja tura (0 - gracz 1, 1 - gracz 2)
 turn_lock = threading.Condition()  # Blokada dla zmiany tur
 
 # Obsługa CTRL+C
-def signal_handler(sig, frame):
+def signal_handler(*args):
     print("\n[INFO] Serwer zakończył rozgrywkę.")
     for client_socket in clients:
         try:
@@ -30,7 +30,7 @@ def signal_handler(sig, frame):
         except:
             pass
     sys.exit(0)
-    
+
 signal.signal(signal.SIGINT, signal_handler)  # Ustawienie obsługi sygnału
 signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - jak zamkniemy terminal to działa
 
