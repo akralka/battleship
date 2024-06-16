@@ -17,22 +17,21 @@ MULTICAST_PORT = 5007
 clients = []
 player_boards = []
 ships_info = [{}, {}]
-turn = 0  # Czyja tura (0 - gracz 1, 1 - gracz 2)
-turn_lock = threading.Condition()  # Blokada dla zmiany tur
+turn = 0  #  (0 - player 1, 1 - player 2)
+turn_lock = threading.Condition()  # Lock for changing turns
 
-# Obsługa CTRL+C
+# CTRL+C
 def signal_handler(*args):
-    print("\n[INFO] Serwer zakończył rozgrywkę.")
     for client_socket in clients:
         try:
-            client_socket.send("Serwer zakończył rozgrywkę".encode())
+            client_socket.send("The server has ended the game.".encode())
             client_socket.close()
         except:
             pass
     sys.exit(0)
 
-signal.signal(signal.SIGINT, signal_handler)  # Ustawienie obsługi sygnału
-signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - jak zamkniemy terminal to działa
+signal.signal(signal.SIGINT, signal_handler)  # Signal handling setup
+signal.signal(signal.SIGHUP, signal.SIG_IGN)  # DAEMON - works after teriminal is closed
 
 def multicast_listener():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as multicast_socket:
@@ -44,145 +43,144 @@ def multicast_listener():
         while True:
             data, addr = multicast_socket.recvfrom(1024)
             if data.decode() == 'DISCOVER_SERVER':
-                multicast_socket.sendto(f'Serwer:{SERVER_HOST}:{SERVER_PORT}'.encode(), addr)
+                multicast_socket.sendto(f'Server:{SERVER_HOST}:{SERVER_PORT}'.encode(), addr)
 
 
 def handle_client(client_socket, addr, client_id):
     global turn
-    logging.info(f"[INFO] Klient {addr} dołączył do gry.")
+    logging.info(f"[INFO] Client {addr} has joined the game.")
 
     try:
-        client_socket.send("================START================\n\n".encode())
-        client_socket.send("[INFO] Ustaw swoje statki.\n".encode())
+        client_socket.send("=========== WELCOME TO THE BATTLESHIP ===========\n\n".encode())
+        client_socket.send("[INFO] Position your ships.\n".encode())
 
-        board = [['_'] * 10 for _ in range(10)]  # Pusta plansza [['_', '_', '_', '_', '_', '_', '_', '_', '_', '_'], ['_', ...]] x 10
-        ships = {}  # Informacje o statkach: {'5-miejscowy': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-miejscowy'....}
+        board = [['_'] * 10 for _ in range(10)]  # Empty board [['_', '_', '_', '_', '_', '_', '_', '_', '_', '_'], ['_', ...]] x 10
+        ships = {}  # {'5-seater': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-seater'....}
         ships_info[client_id] = ships   
-        ship_definitions = [(5, "5-miejscowy"), (3, "3-miejscowy"), (1, "1-miejscowy")]
+        ship_definitions = [(5, "5-seater"), (3, "3-seater"), (1, "1-seater")]
 
-        # Rozmieszczenie statków
+        # Ships deployment
         for ship_length, ship_name in ship_definitions:
             while True:
                 if ship_length == 1:
-                    client_socket.send(f"[INFO] Umieść {ship_name} statek na planszy.\n       Podaj jego pozycję (np. H4):".encode())
+                    client_socket.send(f"[INFO] Place {ship_name} ship on the board:\n       Specify its position (e.g., H4):".encode())
                     try:
                         position = client_socket.recv(1024).decode().strip()
                     except:
                         continue
                     start = parse_position(position)
                     if start is None:
-                        client_socket.send("[ERROR] Można używać tylko formatu {A-J}{1-10}.\n".encode())
+                        client_socket.send("[ERROR] Only the {A-J}{1-10} format can be used.\n".encode())
                         continue
                     end = start
                 else:
-                    client_socket.send(f"[INFO] Umieść {ship_name} statek na planszy:\n       Podaj jego początek i koniec (np. B2 B6): ".encode())
+                    client_socket.send(f"[INFO] Place {ship_name} ship on the board:\n       Enter its beginning and end (e.g. B2 B6): ".encode())
                     try:
                         positions = client_socket.recv(1024).decode().strip().split()
                     except:
                         continue
                     if len(positions) != 2:
-                        client_socket.send("[ERROR] Nieprawidłowy format. Spróbuj ponownie.\n".encode())
+                        client_socket.send("[ERROR] Invalid format. Try again.\n".encode())
                         continue
                     start = parse_position(positions[0])
                     end = parse_position(positions[1])
                     if start is None or end is None:
-                        client_socket.send("[ERROR] Można używać tylko formatu {A-J}{1-10}.\n".encode())
+                        client_socket.send("[ERROR] Only the {A-J}{1-10} format can be used.\n".encode())
                         continue
 
                 error_message = validate_ships_position(board, ship_length, start, end)
                 if error_message:
-                    client_socket.send(error_message.encode() + b"\n")    #b"\n" bo bytes, nie zwykły string
+                    client_socket.send(error_message.encode() + b"\n")    #b"\n" bytes, not a string
                     continue
 
-                place_ship(board, start, end, ship_length, ship_name, ships)  
+                place_ship(board, start, end, ship_name, ships)  
                 # print(ships[ship_name])                # [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)]
-                # print(ships_info[client_id])           # {'5-miejscowy': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-miejscowy': [(0, 5), (0, 6), (0, 7)], '1-miejscowy': [(7, 3)]}
+                # print(ships_info[client_id])           # {'5-seater': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], '3-seater': [(0, 5), (0, 6), (0, 7)], '1-seater': [(7, 3)]}
                 break
 
-        logging.info(f"[INFO] {addr} ukończył ustawianie statków.")
+        logging.info(f"[INFO] {addr} completed positioning the ships.")
 
         player_boards.append(board)
 
         if len(player_boards) < MAX_CLIENTS:
-            client_socket.send("[INFO] Oczekiwanie na drugiego gracza.\n".encode())
+            client_socket.send("[INFO] Waiting for the opponent.\n".encode())
             while len(player_boards) < MAX_CLIENTS:
                 pass
 
-        client_socket.send("=====Gra rozpoczyna się.====\n\n".encode())
+        client_socket.send("========The game starts.=======\n\n".encode())
 
         opponent_board_display = [['_'] * 10 for _ in range(10)] 
 
-        # Główna pętla gry
+        # The main game loop
         waiting_message = True
         while True:
-            with turn_lock:  # Blokada - czyja tura
-                while client_id != turn:  # Czekanie na swoją turę
+            with turn_lock:  # Blockade - whose turn
+                while client_id != turn:  # Waiting for your turn
                     if waiting_message:
-                        client_socket.send("[INFO] Oczekiwanie na ruch przeciwnika.\n".encode())
+                        client_socket.send("[INFO] Waiting for the opponent's move.\n".encode())
                         waiting_message = False 
-                    turn_lock.wait()  # Czekanie na sygnał do zmiany tury
+                    turn_lock.wait()  # Waiting for the signal to change turn
 
-            client_socket.send("TWÓJ RUCH! Podaj pozycję do strzału (np. A1):\n".encode())
-            client_socket.send(display_board(opponent_board_display, to_string=True).encode())
+            client_socket.send("YOUR MOVE! Enter your shooting position (e.g. A1):\n".encode())
+            client_socket.send(display_board(opponent_board_display).encode())
             try: 
                 position = client_socket.recv(1024).decode().strip()
             except:
-                logging.info("Klient zakończył grę.")
+                logging.info("The client has finished the game.")
                 continue
             target = parse_position(position)
             if target is None:
-                client_socket.send("[ERROR] Można używać tylko A-J oraz 1-10.\n".encode())
+                client_socket.send("[ERROR] Only A-J and 1-10 can be used.\n".encode())
                 continue
             target_row, target_col = target
             opponent_id = 1 - client_id
             opponent_board = player_boards[opponent_id]
 
             if opponent_board[target_row][target_col] in ['X', '~']: 
-                client_socket.send("[ERROR] To pole było już sprawdzane. Spróbuj ponownie.\n".encode())
+                client_socket.send("[ERROR] This field has already been checked. Try again.\n".encode())
                 continue
 
-            if opponent_board[target_row][target_col] == 'O':  # Czyli jak trafimy
+            if opponent_board[target_row][target_col] == 'O':  # That is, when we hit the ship
                 opponent_board[target_row][target_col] = 'X'
                 opponent_board_display[target_row][target_col] = 'X'
                 player_boards[opponent_id] = opponent_board
-                response = f"TRAFIONY: {position}\n"
-                for ship_name, ship_positions in ships_info[opponent_id].items():  # {'5-miejscowy': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], ...
-                    if (target_row, target_col) in ship_positions:                 # ('5-miejscowy', [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)])
+                response = f"HIT: {position}\n"
+                for ship_name, ship_positions in ships_info[opponent_id].items():  # {'5-seater': [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], ...
+                    if (target_row, target_col) in ship_positions:                 # ('5-seater', [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)])
                         if is_ship_sunk(ship_positions, opponent_board):
-                            response += f"ZATOPIONY: {ship_name}\n"
+                            response += f"SUNK: {ship_name}\n"
                             client_socket.send(response.encode())
-                            clients[opponent_id].send(f"PRZECIWNIK TRAFIŁ: {position}\nZATOPIONY: {ship_name}\n".encode())
+                            clients[opponent_id].send(f"THE OPPONENT HIT: {position}\nSUNK: {ship_name}\n".encode())
                             break
-                else: # for  else, bo jesli break ^ to else się nie wykona
+                else: # for else:  if "break" ^ then "else" will not be executed
                     client_socket.send(response.encode())
-                    clients[opponent_id].send(f"PRZECIWNIK TRAFIŁ: {position}\n".encode())
+                    clients[opponent_id].send(f"THE OPPONENT HIT: {position}\n".encode())
             else:
-                opponent_board[target_row][target_col] = '~'  # Pudło
+                opponent_board[target_row][target_col] = '~'  # miss
                 opponent_board_display[target_row][target_col] = '~'
-                response = f"PUDŁO: {position}\n"
+                response = f"MISS: {position}\n"
                 client_socket.send(response.encode())
 
-            # Czy przeciwnik przegrał
+            # Checking whether the opponent has lost
             if all(cell != 'O' for row in opponent_board for cell in row):
-                client_socket.send("==============KONIEC GRY!==============\n              Wygrałeś!".encode())
-                clients[opponent_id].send("==============KONIEC GRY!==============\n          Przeciwnik wygrał!".encode())
+                client_socket.send("==============END OF THE GAME!==============\n                  You won!".encode())
+                clients[opponent_id].send("==============GAME OVER!==============\n         Your opponent has won!".encode())
                 client_socket.close()
                 clients[opponent_id].close()
-                logging.info(f"[INFO] Koniec gry. {addr} wygrał.")       
+                logging.info(f"[INFO] End of the game. {addr} won.")       
                 break
 
             with turn_lock:
                 turn = opponent_id  
                 waiting_message = True  
-                turn_lock.notify_all()  # Info dla przeciwnika o jego turze
+                turn_lock.notify_all()  # Info for the opponent about his turn
 
     except Exception as e:
-        print(f"[INFO] {addr} zakończył rozgrywkę. {e}")
-        logging.error(f"Error handling client {addr}: {e}")
+        logging.error(f"[ERROR] Handling client {addr} finished with: {e}")
         other_client_id = 1 - client_id
         if other_client_id < len(clients):
             try:
-                clients[other_client_id].send(f"Użytkownik {addr} zakończył rozgrywkę.\n".encode())
+                clients[other_client_id].send(f"Player {addr} has finished the game.\n".encode())
                 clients[other_client_id].close()
             except:
                 pass
@@ -190,11 +188,11 @@ def handle_client(client_socket, addr, client_id):
 
 def server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1) # mozna osobno na innych adresach na tym samym porcie
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT,1) # mozna się bindowac jak TIME/CLOSE_WAIT
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1) # (can be) separately on other addresses on the same port
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT,1) # bind (when TIME/CLOSE_WAIT)
         server_socket.bind((SERVER_HOST, SERVER_PORT))
         server_socket.listen()
-        logging.info(f"[INFO] Serwer uruchomiony na {SERVER_HOST}:{SERVER_PORT}.")
+        logging.info(f"[INFO] Server running on {SERVER_HOST}:{SERVER_PORT}.")
 
         threading.Thread(target=multicast_listener, daemon=True).start()
 
@@ -203,14 +201,14 @@ def server():
             try:
                 client_socket, addr = server_socket.accept()
                 if len(clients) >= MAX_CLIENTS:
-                    logging.info(f"[INFO] Próba połączenia z adresu: {addr}")
-                    client_socket.send("[INFO] Serwer jest pełny. Spróbuj ponownie później.\n".encode())
+                    logging.info(f"[INFO] Attempt to connect from the address:{addr}")
+                    client_socket.send("[INFO] The server is full. Please try again later.\n".encode())
                     client_socket.close()
                     continue
                 clients.append(client_socket)
-                client_thread = threading.Thread(target=handle_client, args=(client_socket, addr, client_id))  # Utworzenie wątku dla klienta
-                client_thread.start()  # Uruchomienie wątku
-                client_id += 1  # Zwiększenie ID klienta
+                client_thread = threading.Thread(target=handle_client, args=(client_socket, addr, client_id))  # Create a thread for the client
+                client_thread.start()  
+                client_id += 1  # Increasing the customer ID
             except Exception as e:
                 print(f"[ERROR] {e}")
                 break

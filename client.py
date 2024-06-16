@@ -4,24 +4,21 @@ import signal
 import sys  
 import logging  
 
-SERVER_HOST = '127.0.0.1'  
-SERVER_PORT = 3501
-
 MULTICAST_GROUP = '224.0.0.1'
 MULTICAST_PORT = 5007
 
-# Obsługa logów
+# Logs
 logging.basicConfig(filename='client.log', level=logging.INFO)
 client_socket = None
 
-# Obsługa CTRL+C
-def signal_handler(*args):
+# CTRL+C
+def signal_handler(*args):  # args: sig & frame
     global client_socket
-    logging.info("[INFO] Zakończyłeś rozgrywkę.") 
+    logging.info(f"[INFO] One of the clients ended the game.")
     client_socket.close()  
     sys.exit(0) 
 
-# Ustawienie obsługi sygnału SIGINT (CTRL+C) za pomocą funkcji signal_handler
+# Handling SIGINT (CTRL+C) signal using the signal_handler function
 signal.signal(signal.SIGINT, signal_handler)
 
 def discover_server():
@@ -33,11 +30,11 @@ def discover_server():
         while True:
             try:
                 data, _ = multicast_socket.recvfrom(1024)
-                if data.decode().startswith('Serwer'):
+                if data.decode().startswith('Server'):
                     _, server_ip, server_port = data.decode().split(':')
                     return server_ip, int(server_port)
             except socket.timeout:
-                logging.error("Nie znaleziono serwera multicast. Spróbuj ponownie.")
+                logging.error("Multicast server not found. Try again.")
                 sys.exit(0)
 
 def receive_messages(client_socket):
@@ -47,11 +44,11 @@ def receive_messages(client_socket):
             if not message:
                 break
             print(message) 
-            if "Wygrałeś!" in message or "Przeciwnik wygrał!" in message: 
+            if "You won!" in message or "Your opponent has won!" in message: 
                 client_socket.close() 
                 sys.exit(0) 
         except:
-            logging.error("Utracono połączenie z serwerem.")
+            logging.error("Connection to the server was lost.")
             sys.exit(0)
 
 def client():
@@ -59,9 +56,9 @@ def client():
     server_ip, server_port = discover_server()
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
     client_socket.connect((server_ip, server_port))
-    logging.info(f"[INFO] Połączono z serwerem {server_ip}:{server_port}") 
+    logging.info(f"[INFO] Connected to the server {server_ip}:{server_port}") 
     
-    # Wątek do odbierania wiadomości od serwera
+    #A thread for receiving messages from the server
     receive_thread = threading.Thread(target=receive_messages, args=(client_socket,))
     receive_thread.start()
     
@@ -70,8 +67,7 @@ def client():
             message = input() 
             client_socket.send(message.encode())
         except KeyboardInterrupt:  # CTRL+C
-            # print("\n[INFO] Klient zakończył rozgrywkę.")
-            logging.info("\n[INFO] Klient zakończył rozgrywkę.") 
+            logging.info("\n[INFO] The client has finished the game.") 
             client_socket.close()  
             sys.exit(0) 
         except Exception as e:
