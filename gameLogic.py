@@ -63,7 +63,6 @@ def display_board(board):
 
     board_string = header + "\n" + rows 
 
-
     return board_string  # Returns as a string
 
 
